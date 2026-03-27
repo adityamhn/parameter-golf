@@ -205,7 +205,7 @@ class GPT(nn.Module):
         super().__init__()
         self.logit_softcap = LOGIT_SOFTCAP
         self.tok_emb = nn.Embedding(VOCAB_SIZE, MODEL_DIM)
-        self.num_encoder_layers = 4
+        self.num_encoder_layers = 5
         self.num_decoder_layers = NUM_LAYERS - self.num_encoder_layers
         self.num_skip_weights = min(self.num_encoder_layers, self.num_decoder_layers)
         self.skip_weights = mx.ones((self.num_skip_weights, MODEL_DIM), dtype=mx.float32)
