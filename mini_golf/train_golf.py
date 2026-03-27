@@ -47,7 +47,7 @@ from prepare_golf import (
 # Hyperparameters (tune these!)
 # ---------------------------------------------------------------------------
 
-NUM_LAYERS = 4
+NUM_LAYERS = 5
 MODEL_DIM = 256
 NUM_HEADS = 4
 NUM_KV_HEADS = 2
