@@ -5,3 +5,4 @@ commit	val_bpb	artifact_bytes	status	category	escalate	description
 11007e7	1.774667	7182001	discard	attn	no	partial RoPE 16/64 — concat overhead slows training (+0.023)
 c2d2a2a	1.762191	8781509	discard	arch	no	11 layers — near-miss; too slow (2306 vs 2832 steps; +0.011)
 32c4e31	1.762037	8013253	discard	arch	no	10 layers — still worse (2634 vs 2832 steps; +0.010)
+f60e705	1.770194	7339350	discard	arch	no	BigramHash 2048 — extra params don't help (+0.019; 2898 steps)
