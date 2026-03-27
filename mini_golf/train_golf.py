@@ -76,8 +76,6 @@ BETA2 = 0.95
 ADAM_EPS = 1e-8
 WARMDOWN_ITERS = 200
 
-EMA_DECAY = 0.997
-
 SEED = 1337
 
 # ---------------------------------------------------------------------------
@@ -382,9 +380,6 @@ def main() -> None:
     # Reset loader so training starts from a clean token window.
     train_loader = TokenLoader(train_files, log_fn=print)
 
-    # EMA shadow weights
-    ema_state = {k: mx.array(v) for k, v in tree_flatten(model.state)}
-
     # Training loop
     train_time_ms = 0.0
     t0 = time.perf_counter()
@@ -412,9 +407,6 @@ def main() -> None:
         grads_tree = tree_unflatten(list(accum.items()))
         train_loss_value = float(train_loss.item())
         opt.step(model, grads_tree, step=step, lr_scale=lrm)
-        for k, v in tree_flatten(model.state):
-            ema_state[k] = EMA_DECAY * ema_state[k] + (1 - EMA_DECAY) * v
-        mx.eval(ema_state)
         mx.synchronize()
 
         step_ms = 1000.0 * (time.perf_counter() - step_t0)
@@ -434,9 +426,6 @@ def main() -> None:
 
     total_train_time = time.perf_counter() - t0
     print(f"\ntraining done: {step} steps in {total_train_time:.1f}s")
-
-    # Apply EMA weights for evaluation
-    model.update(tree_unflatten(list(ema_state.items())))
 
     # Final evaluation
     print("evaluating...")
