@@ -79,6 +79,8 @@ ADAM_EPS = 1e-8
 WARMDOWN_ITERS = 400
 MUON_WD = 0.04
 ADAM_WD = 0.01
+EMA_DECAY = 0.997
+EMA_START_STEP = 2000
 
 SEED = 1337
 
@@ -392,6 +394,7 @@ def main() -> None:
     t0 = time.perf_counter()
     step = 0
     stop_after_step: int | None = None
+    ema_state: dict[str, mx.array] | None = None
 
     while True:
         last_step = step == MAX_ITERATIONS or (stop_after_step is not None and step >= stop_after_step)
@@ -414,6 +417,13 @@ def main() -> None:
         grads_tree = tree_unflatten(list(accum.items()))
         train_loss_value = float(train_loss.item())
         opt.step(model, grads_tree, step=step, lr_scale=lrm)
+        if EMA_DECAY > 0 and step >= EMA_START_STEP:
+            flat = {k: v for k, v in tree_flatten(model.state)}
+            if ema_state is None:
+                ema_state = {k: mx.array(v) for k, v in flat.items()}
+            else:
+                for k, v in flat.items():
+                    ema_state[k] = EMA_DECAY * ema_state[k] + (1 - EMA_DECAY) * v
         mx.synchronize()
 
         step_ms = 1000.0 * (time.perf_counter() - step_t0)
@@ -433,6 +443,10 @@ def main() -> None:
 
     total_train_time = time.perf_counter() - t0
     print(f"\ntraining done: {step} steps in {total_train_time:.1f}s")
+
+    if ema_state is not None:
+        print(f"applying EMA weights (started at step {EMA_START_STEP})")
+        model.update(tree_unflatten(list(ema_state.items())))
 
     # Final evaluation
     print("evaluating...")
