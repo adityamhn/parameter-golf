@@ -1,1 +1,3 @@
 commit	val_bpb	artifact_bytes	status	category	escalate	description
+9a299c0	1.751657	7163979	keep	baseline	no	Tier 2 baseline: 9L/384D/6H/3KV U-Net 4+5 with WD (2832 steps)
+4393e26	1.802850	8503758	discard	mlp	no	3x MLP width — still too slow (2356 vs 2832 steps; +0.051)
