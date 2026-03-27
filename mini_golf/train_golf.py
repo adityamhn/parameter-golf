@@ -49,7 +49,7 @@ TIME_BUDGET = 600  # Tier 2: match H100 challenge time budget (override prepare_
 # Hyperparameters (tune these!)
 # ---------------------------------------------------------------------------
 
-NUM_LAYERS = 9
+NUM_LAYERS = 11
 MODEL_DIM = 384
 NUM_HEADS = 6
 NUM_KV_HEADS = 3
