@@ -59,6 +59,7 @@ LOGIT_SOFTCAP = 30.0
 ROPE_BASE = 10000.0
 QK_GAIN_INIT = 1.5
 TIED_EMBED_INIT_STD = 0.005
+BIGRAM_HASH_SIZE = 2048
 
 TRAIN_BATCH_TOKENS = 8192
 GRAD_ACCUM_STEPS = 1
@@ -206,6 +207,8 @@ class GPT(nn.Module):
         super().__init__()
         self.logit_softcap = LOGIT_SOFTCAP
         self.tok_emb = nn.Embedding(VOCAB_SIZE, MODEL_DIM)
+        if BIGRAM_HASH_SIZE > 0:
+            self.bigram_emb = nn.Embedding(BIGRAM_HASH_SIZE, MODEL_DIM)
         self.num_encoder_layers = NUM_LAYERS // 2
         self.num_decoder_layers = NUM_LAYERS - self.num_encoder_layers
         self.num_skip_weights = min(self.num_encoder_layers, self.num_decoder_layers)
@@ -222,13 +225,24 @@ class GPT(nn.Module):
         self.tok_emb.weight = (
             mx.random.normal(self.tok_emb.weight.shape, dtype=mx.float32) * TIED_EMBED_INIT_STD
         ).astype(COMPUTE_DTYPE)
+        if BIGRAM_HASH_SIZE > 0:
+            self.bigram_emb.weight = (
+                mx.random.normal(self.bigram_emb.weight.shape, dtype=mx.float32) * TIED_EMBED_INIT_STD
+            ).astype(COMPUTE_DTYPE)
+
+    def _bigram_ids(self, input_ids: mx.array) -> mx.array:
+        prev = mx.concatenate([mx.zeros_like(input_ids[..., :1]), input_ids[..., :-1]], axis=-1)
+        return (input_ids * 257 + prev) % BIGRAM_HASH_SIZE
 
     def softcap(self, logits: mx.array) -> mx.array:
         c = self.logit_softcap
         return c * mx.tanh(logits / c)
 
     def __call__(self, input_ids: mx.array) -> mx.array:
-        x = rms_norm(self.tok_emb(input_ids).astype(COMPUTE_DTYPE))
+        x = self.tok_emb(input_ids).astype(COMPUTE_DTYPE)
+        if BIGRAM_HASH_SIZE > 0:
+            x = x + self.bigram_emb(self._bigram_ids(input_ids)).astype(COMPUTE_DTYPE)
+        x = rms_norm(x)
         x0 = x
         skips: list[mx.array] = []
         for i in range(self.num_encoder_layers):
