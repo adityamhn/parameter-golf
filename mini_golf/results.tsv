@@ -20,3 +20,4 @@ d72b4b0	1.693383	7229294	keep	other	yes	warmdown 800 — another big win! (-0.01
 8ab73bc	1.667146	7134946	keep	other	yes	warmdown 2000 — still improving (-0.011 more; cumulative -0.085)
 695e8bb	1.664065	7130068	keep	other	yes	warmdown 2500 — still improving (-0.003 more; cumulative -0.088)
 a32e698	1.704051	5110111	discard	other	no	warmdown 50000 (full decay) — too much; LR too low early (+0.040)
+e442182	1.661351	7112796	keep	other	yes	warmdown 3000 — new best! (-0.003 more; cumulative -0.090)
