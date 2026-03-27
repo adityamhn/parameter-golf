@@ -8,3 +8,4 @@ c2d2a2a	1.762191	8781509	discard	arch	no	11 layers — near-miss; too slow (2306
 f60e705	1.770194	7339350	discard	arch	no	BigramHash 2048 — extra params don't help (+0.019; 2898 steps)
 64547ca	1.729628	7194070	keep	arch	yes	encoder-heavy U-Net 6+3 — WINNER! (-0.022 BPB; 2907 steps)
 ecfdc4e	1.731467	7245462	discard	arch	no	encoder-heavy U-Net 7+2 — slightly worse than 6+3 (+0.002)
+cc3a2f3	1.724587	7281242	keep	arch	yes	plain transformer 9+0 — new best! (-0.027 from baseline; -0.005 from 6+3)
