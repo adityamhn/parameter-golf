@@ -75,6 +75,7 @@ BETA1 = 0.9
 BETA2 = 0.95
 ADAM_EPS = 1e-8
 WARMDOWN_ITERS = 200
+MUON_WD = 0.04
 
 SEED = 1337
 
@@ -269,7 +270,8 @@ class Muon:
             g_eff = g + momentum * buf
             g_ortho = zeropower_newtonschulz5(g_eff, MUON_BACKEND_STEPS)
             scale = math.sqrt(max(1.0, float(p.shape[0]) / float(p.shape[1])))
-            out[k] = p - lr * (g_ortho * scale).astype(p.dtype)
+            p_decayed = p * (1.0 - lr * MUON_WD) if MUON_WD > 0 else p
+            out[k] = p_decayed - lr * (g_ortho * scale).astype(p.dtype)
         return out
 
 
