@@ -15,3 +15,4 @@ cfc8362	1.730298	7306942	discard	other	no	grad_accum=2 — fewer updates hurts (
 77b9269	1.711116	7271437	keep	other	yes	warmdown 600 on plain transformer — new best! (-0.013 from prev best)
 d72b4b0	1.693383	7229294	keep	other	yes	warmdown 800 — another big win! (-0.018 more; cumulative -0.058)
 3beebad	1.687301	7212353	keep	other	yes	warmdown 1000 — still improving (-0.006 more; cumulative -0.064)
+65fcaf8	1.681038	7172987	keep	other	yes	warmdown 1200 — still improving (-0.006 more; cumulative -0.071)
