@@ -13,3 +13,4 @@ ca2501a	1.751936	6460626	discard	other	no	Muon WD=0.08 — too much regularizati
 cfc8362	1.730298	7306942	discard	other	no	grad_accum=2 — fewer updates hurts (+0.006 from best)
 369e186	1.765140	7154948	discard	other	no	Muon LR=0.06 — too aggressive (+0.041 from best)
 77b9269	1.711116	7271437	keep	other	yes	warmdown 600 on plain transformer — new best! (-0.013 from prev best)
+d72b4b0	1.693383	7229294	keep	other	yes	warmdown 800 — another big win! (-0.018 more; cumulative -0.058)
