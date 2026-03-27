@@ -76,6 +76,7 @@ BETA2 = 0.95
 ADAM_EPS = 1e-8
 WARMDOWN_ITERS = 200
 MUON_WD = 0.04
+ADAM_WD = 0.01
 
 SEED = 1337
 
@@ -303,12 +304,14 @@ class SplitOptimizers:
         updated = dict(params)
         updated.update(self.muon.step(params, grads, step=step, lr_scale=lr_scale))
         self.adam_embed.learning_rate = TIED_EMBED_LR * lr_scale
-        updated.update(
-            self.adam_embed.apply_gradients(
-                {self.embed_key: grads[self.embed_key]},
-                {self.embed_key: params[self.embed_key]},
-            )
+        embed_updated = self.adam_embed.apply_gradients(
+            {self.embed_key: grads[self.embed_key]},
+            {self.embed_key: params[self.embed_key]},
         )
+        if ADAM_WD > 0:
+            wd_factor = 1.0 - TIED_EMBED_LR * lr_scale * ADAM_WD
+            embed_updated = {k: v * wd_factor for k, v in embed_updated.items()}
+        updated.update(embed_updated)
         self.adam_scalar.learning_rate = SCALAR_LR * lr_scale
         scalar_grads = {k: grads[k] for k in self.scalar_keys}
         scalar_params = {k: params[k] for k in self.scalar_keys}
