@@ -310,7 +310,7 @@ LOOP FOREVER:
 
 ## Timeout
 
-Each experiment should take ~2-3 minutes total (90s training + evaluation overhead). If a run exceeds 5 minutes, kill it and treat it as a failure (discard and revert).
+Each experiment should take ~12-15 minutes total (600s training + evaluation overhead). If a run exceeds 20 minutes, kill it and treat it as a failure (discard and revert).
 
 ## Crashes
 
@@ -320,4 +320,51 @@ If a run crashes (OOM, a bug, etc.), use your judgment: if it's something dumb a
 
 Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working *indefinitely* until you are manually stopped. You are autonomous. If you run out of ideas, think harder — re-read the in-scope files for new angles, try combining previous near-misses, try more radical architectural changes. The loop runs until the human interrupts you, period.
 
-As an example use case, a user might leave you running while they sleep. If each experiment takes ~3 minutes then you can run approx 20/hour, for a total of about 160 over an 8-hour sleep. The user then wakes up to `results.tsv` and `escalation_log.md` — the complete research output, ready to port the best findings to H100.
+As an example use case, a user might leave you running while they sleep. If each experiment takes ~12 minutes then you can run approx 5/hour, for a total of about 40 over an 8-hour sleep. The user then wakes up to `results.tsv` and `escalation_log.md` — the complete research output, ready to port the best findings to H100.
+
+## Tier 2 Methodology
+
+This experiment uses a **Tier 2 proxy** designed to faithfully approximate the full H100 challenge:
+
+### Why Tier 2?
+
+Tier 1 (90s, 6L/256D) operated in a regime where per-step speed dominated everything. Techniques proven at full scale (EMA, 3x MLP, partial RoPE, XSA) failed because the model only trained for ~1,250 steps. Tier 2 fixes this by matching the full-scale time budget (600s) with a proportionally scaled architecture.
+
+### Architecture Mapping
+
+| Setting              | Full-Scale (H100) | Tier 2 (M4 Pro)  | Ratio Preserved? |
+|----------------------|--------------------|--------------------|------------------|
+| TIME_BUDGET          | 600s               | 600s               | Exact match      |
+| Layers               | 9                  | 9                  | Exact match      |
+| Model dim            | 512                | 384                | Scaled for speed  |
+| Heads / KV heads     | 8 / 4              | 6 / 3              | 2:1 GQA ratio    |
+| Head dim             | 64                 | 64                 | Exact match      |
+| MLP mult             | 2x                 | 2x                 | Exact match      |
+| U-Net split          | 4 enc + 5 dec      | 4 enc + 5 dec      | Exact match      |
+| Warmdown ratio       | ~10% of time       | ~10% of time       | Matched          |
+| Muon momentum warmup | ~4% of time        | ~5% of time        | Matched          |
+
+### Tier 1 Results (for reference)
+
+Key findings from Tier 1 (90s runs on mini-golf/mar27c):
+- **Muon WD=0.04**: -0.025 BPB (proven, carried into Tier 2 baseline)
+- **Adam WD=0.01 on embedding**: -0.011 BPB more (proven, carried into Tier 2 baseline)
+- **Encoder-heavy U-Net**: Monotonic improvement 3+3 → 4+2 → 5+1 → 6+0. Likely a mini-scale artifact, but worth testing the asymmetric direction at Tier 2.
+- **Depth recurrence**: Signs of life (4% worse with 45% fewer params). Frontier candidate.
+- **EMA, 3x MLP, partial RoPE, BigramHash**: All failed at Tier 1 due to insufficient training steps. Expected to work at Tier 2.
+
+### Experiment Priorities for Tier 2
+
+**Phase 1 — Baseline** (1-2 runs): Establish the Tier 2 baseline BPB.
+
+**Phase 2 — Proven techniques** (~10 runs): Test individually:
+1. 3x MLP width (biggest single leaderboard technique)
+2. EMA weight averaging (decay 0.997)
+3. Partial RoPE (16 of 64 head dims)
+4. XSA in deepest 3-4 layers
+5. 10-11 layers (deeper models, if step count allows)
+6. BigramHash auxiliary input
+
+**Phase 3 — Stack winners** (~10 runs): Combine the top 2-3 individual winners. Test encoder-heavy U-Net at 9-layer scale.
+
+**Phase 4 — Frontier** (~10 runs): Depth recurrence, other creative ideas.

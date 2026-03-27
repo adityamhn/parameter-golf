@@ -27,7 +27,7 @@ import sentencepiece as spm
 
 from prepare_golf import (
     MAX_SEQ_LEN,
-    TIME_BUDGET,
+    TIME_BUDGET as _BASE_TIME_BUDGET,
     VOCAB_SIZE,
     EVAL_TOKENS,
     VAL_BATCH_TOKENS,
@@ -43,14 +43,16 @@ from prepare_golf import (
     dequantize_state_dict_int8,
 )
 
+TIME_BUDGET = 600  # Tier 2: match H100 challenge time budget (override prepare_golf's 90s)
+
 # ---------------------------------------------------------------------------
 # Hyperparameters (tune these!)
 # ---------------------------------------------------------------------------
 
-NUM_LAYERS = 6
-MODEL_DIM = 256
-NUM_HEADS = 4
-NUM_KV_HEADS = 2
+NUM_LAYERS = 9
+MODEL_DIM = 384
+NUM_HEADS = 6
+NUM_KV_HEADS = 3
 MLP_MULT = 2
 TRAIN_SEQ_LEN = MAX_SEQ_LEN  # 512
 LOGIT_SOFTCAP = 30.0
@@ -70,11 +72,11 @@ SCALAR_LR = 0.04
 MUON_MOMENTUM = 0.95
 MUON_BACKEND_STEPS = 5
 MUON_MOMENTUM_WARMUP_START = 0.85
-MUON_MOMENTUM_WARMUP_STEPS = 500
+MUON_MOMENTUM_WARMUP_STEPS = 200
 BETA1 = 0.9
 BETA2 = 0.95
 ADAM_EPS = 1e-8
-WARMDOWN_ITERS = 200
+WARMDOWN_ITERS = 400
 MUON_WD = 0.04
 ADAM_WD = 0.01
 
@@ -205,8 +207,8 @@ class GPT(nn.Module):
         super().__init__()
         self.logit_softcap = LOGIT_SOFTCAP
         self.tok_emb = nn.Embedding(VOCAB_SIZE, MODEL_DIM)
-        self.num_encoder_layers = NUM_LAYERS
-        self.num_decoder_layers = 0
+        self.num_encoder_layers = NUM_LAYERS // 2
+        self.num_decoder_layers = NUM_LAYERS - self.num_encoder_layers
         self.num_skip_weights = min(self.num_encoder_layers, self.num_decoder_layers)
         self.skip_weights = mx.ones((self.num_skip_weights, MODEL_DIM), dtype=mx.float32)
         self.blocks = [
