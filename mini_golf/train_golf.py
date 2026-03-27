@@ -57,6 +57,7 @@ MLP_MULT = 2
 TRAIN_SEQ_LEN = MAX_SEQ_LEN  # 512
 LOGIT_SOFTCAP = 30.0
 ROPE_BASE = 10000.0
+ROPE_DIMS = 16
 QK_GAIN_INIT = 1.5
 TIED_EMBED_INIT_STD = 0.005
 
@@ -144,13 +145,14 @@ class CausalSelfAttention(nn.Module):
         self.head_dim = dim // num_heads
         if self.head_dim % 2 != 0:
             raise ValueError("head_dim must be even for RoPE")
+        self.rope_dims = min(ROPE_DIMS, self.head_dim)
         kv_dim = self.num_kv_heads * self.head_dim
         self.c_q = CastedLinear(dim, dim)
         self.c_k = CastedLinear(dim, kv_dim)
         self.c_v = CastedLinear(dim, kv_dim)
         self.proj = CastedLinear(dim, dim)
         self.q_gain = mx.ones((num_heads,), dtype=mx.float32) * qk_gain_init
-        self.rope = nn.RoPE(self.head_dim, traditional=False, base=rope_base)
+        self.rope = nn.RoPE(self.rope_dims, traditional=False, base=rope_base)
         self.scale = self.head_dim ** -0.5
 
     def __call__(self, x: mx.array) -> mx.array:
@@ -158,8 +160,16 @@ class CausalSelfAttention(nn.Module):
         q = self.c_q(x).reshape(bsz, seqlen, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
         k = self.c_k(x).reshape(bsz, seqlen, self.num_kv_heads, self.head_dim).transpose(0, 2, 1, 3)
         v = self.c_v(x).reshape(bsz, seqlen, self.num_kv_heads, self.head_dim).transpose(0, 2, 1, 3)
-        q = self.rope(rms_norm(q).astype(COMPUTE_DTYPE))
-        k = self.rope(rms_norm(k).astype(COMPUTE_DTYPE))
+        q_norm = rms_norm(q).astype(COMPUTE_DTYPE)
+        k_norm = rms_norm(k).astype(COMPUTE_DTYPE)
+        if self.rope_dims < self.head_dim:
+            q_rope = self.rope(q_norm[..., :self.rope_dims])
+            q = mx.concatenate([q_rope, q_norm[..., self.rope_dims:]], axis=-1)
+            k_rope = self.rope(k_norm[..., :self.rope_dims])
+            k = mx.concatenate([k_rope, k_norm[..., self.rope_dims:]], axis=-1)
+        else:
+            q = self.rope(q_norm)
+            k = self.rope(k_norm)
         q = q * self.q_gain.astype(q.dtype)[None, :, None, None]
         y = mx.fast.scaled_dot_product_attention(q, k, v, scale=self.scale, mask="causal")
         y = y.transpose(0, 2, 1, 3).reshape(bsz, seqlen, dim)
