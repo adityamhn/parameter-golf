@@ -10,3 +10,4 @@ f60e705	1.770194	7339350	discard	arch	no	BigramHash 2048 — extra params don't 
 ecfdc4e	1.731467	7245462	discard	arch	no	encoder-heavy U-Net 7+2 — slightly worse than 6+3 (+0.002)
 cc3a2f3	1.724587	7281242	keep	arch	yes	plain transformer 9+0 — new best! (-0.027 from baseline; -0.005 from 6+3)
 ca2501a	1.751936	6460626	discard	other	no	Muon WD=0.08 — too much regularization (+0.027 from best)
+cfc8362	1.730298	7306942	discard	other	no	grad_accum=2 — fewer updates hurts (+0.006 from best)
