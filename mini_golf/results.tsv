@@ -27,3 +27,4 @@ e442182	1.661351	7112796	keep	other	yes	warmdown 3000 — new best! (-0.003 more
 fed3f0a	1.679700	7051506	discard	arch	no	no softcap — softcap=30 is helpful (+0.028 from best)
 ef44cf3	1.674544	7166590	discard	skip	no	remove resid_mix on plain — x0 blending still needed (+0.023)
 649f4cc	1.661139	7119694	discard	other	no	Adam WD=0.02 on embedding — worse than 0.01 (+0.010)
+d9c3367	1.664893	7695474	discard	other	no	Muon WD=0.02 — worse than 0.04; underregularized (+0.014)
