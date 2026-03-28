@@ -51,8 +51,8 @@ TIME_BUDGET = 600  # Tier 2: match H100 challenge time budget (override prepare_
 
 NUM_LAYERS = 9
 MODEL_DIM = 384
-NUM_HEADS = 6
-NUM_KV_HEADS = 3
+NUM_HEADS = 8
+NUM_KV_HEADS = 4
 MLP_MULT = 2
 TRAIN_SEQ_LEN = MAX_SEQ_LEN  # 512
 LOGIT_SOFTCAP = 30.0
