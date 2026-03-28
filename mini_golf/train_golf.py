@@ -188,13 +188,8 @@ class Block(nn.Module):
         self.mlp = MLP(dim, mlp_mult)
         self.attn_scale = mx.ones((dim,), dtype=mx.float32)
         self.mlp_scale = mx.ones((dim,), dtype=mx.float32)
-        self.resid_mix = mx.array(
-            np.stack((np.ones((dim,), dtype=np.float32), np.zeros((dim,), dtype=np.float32)))
-        )
 
     def __call__(self, x: mx.array, x0: mx.array) -> mx.array:
-        mix = self.resid_mix.astype(x.dtype)
-        x = mix[0][None, None, :] * x + mix[1][None, None, :] * x0
         attn_out = self.attn(self.attn_norm(x))
         x = x + self.attn_scale.astype(x.dtype)[None, None, :] * attn_out
         x = x + self.mlp_scale.astype(x.dtype)[None, None, :] * self.mlp(self.mlp_norm(x))
