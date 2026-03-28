@@ -111,10 +111,7 @@ def lr_mul(step: int, elapsed_ms: float) -> float:
     step_ms = elapsed_ms / max(step, 1)
     warmdown_ms = WARMDOWN_ITERS * step_ms
     remaining_ms = max(1000.0 * TIME_BUDGET - elapsed_ms, 0.0)
-    if remaining_ms > warmdown_ms:
-        return 1.0
-    t = remaining_ms / max(warmdown_ms, 1e-9)
-    return 0.5 * (1.0 + math.cos(math.pi * (1.0 - t)))
+    return remaining_ms / max(warmdown_ms, 1e-9) if remaining_ms <= warmdown_ms else 1.0
 
 
 # ---------------------------------------------------------------------------
