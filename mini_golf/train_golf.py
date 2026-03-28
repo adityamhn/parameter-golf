@@ -55,7 +55,7 @@ NUM_HEADS = 6
 NUM_KV_HEADS = 3
 MLP_MULT = 2
 TRAIN_SEQ_LEN = MAX_SEQ_LEN  # 512
-LOGIT_SOFTCAP = 0.0
+LOGIT_SOFTCAP = 30.0
 ROPE_BASE = 10000.0
 QK_GAIN_INIT = 1.5
 TIED_EMBED_INIT_STD = 0.005
@@ -225,8 +225,6 @@ class GPT(nn.Module):
 
     def softcap(self, logits: mx.array) -> mx.array:
         c = self.logit_softcap
-        if c <= 0:
-            return logits
         return c * mx.tanh(logits / c)
 
     def __call__(self, input_ids: mx.array) -> mx.array:
