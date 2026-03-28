@@ -26,3 +26,4 @@ e442182	1.661351	7112796	keep	other	yes	warmdown 3000 — new best! (-0.003 more
 8a3b774	1.662939	7162111	discard	other	no	cosine warmdown — worse than linear (+0.012 from best)
 fed3f0a	1.679700	7051506	discard	arch	no	no softcap — softcap=30 is helpful (+0.028 from best)
 ef44cf3	1.674544	7166590	discard	skip	no	remove resid_mix on plain — x0 blending still needed (+0.023)
+649f4cc	1.661139	7119694	discard	other	no	Adam WD=0.02 on embedding — worse than 0.01 (+0.010)
