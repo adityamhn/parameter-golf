@@ -29,3 +29,4 @@ ef44cf3	1.674544	7166590	discard	skip	no	remove resid_mix on plain — x0 blendi
 649f4cc	1.661139	7119694	discard	other	no	Adam WD=0.02 on embedding — worse than 0.01 (+0.010)
 d9c3367	1.664893	7695474	discard	other	no	Muon WD=0.02 — worse than 0.04; underregularized (+0.014)
 7257d77	1.669283	7133840	discard	attn	no	QK gain=2.0 — worse than 1.5 (+0.018)
+9f3ae84	1.675900	7120647	discard	attn	no	8H/4KV (head_dim=48) — slower per step (2477 vs 2926; +0.025)
