@@ -90,8 +90,9 @@ class Hyperparameters:
     bigram_dim = int(os.environ.get("BIGRAM_DIM", 128))
     xsa_last_n = int(os.environ.get("XSA_LAST_N", 4))
     rope_dims = int(os.environ.get("ROPE_DIMS", 16))
-    if rope_dims > 0 and rope_dims % 2 != 0:
-        raise ValueError(f"ROPE_DIMS must be even for partial RoPE (got {rope_dims})")
+    _head_dim = model_dim // num_heads
+    if 0 < rope_dims < _head_dim and rope_dims < 2:
+        raise ValueError(f"Partial ROPE_DIMS must be >= 2 when less than head_dim (got {rope_dims})")
     ln_scale = bool(int(os.environ.get("LN_SCALE", "1")))
     dtg_enabled = bool(int(os.environ.get("DTG_ENABLED", "0")))
     late_qat_threshold = float(os.environ.get("LATE_QAT_THRESHOLD", 0.15))
@@ -578,8 +579,14 @@ class Rotary(nn.Module):
         self.dim = dim
         self.base = base
         self.train_seq_len = train_seq_len
-        self.rope_dims = rope_dims if rope_dims > 0 else dim
-        inv_freq = 1.0 / (base ** (torch.arange(0, self.rope_dims, 2, dtype=torch.float32) / self.rope_dims))
+        # Frequencies for cos/sin: always an even count of rotated dims (odd partial RoPE uses rd_rot < user rope_dims).
+        if rope_dims <= 0 or rope_dims >= dim:
+            self.rope_rot_dims = dim
+        else:
+            self.rope_rot_dims = rope_dims - (rope_dims % 2)
+        inv_freq = 1.0 / (
+            base ** (torch.arange(0, self.rope_rot_dims, 2, dtype=torch.float32) / self.rope_rot_dims)
+        )
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self._seq_len_cached = 0
         self._cos_cached: Tensor | None = None
@@ -591,10 +598,13 @@ class Rotary(nn.Module):
             or self._seq_len_cached != seq_len
             or self._cos_cached.device != device
         ):
-            rd = self.rope_dims
+            rd = self.rope_rot_dims
             if seq_len > self.train_seq_len:
                 scale = seq_len / self.train_seq_len
-                new_base = self.base * (scale ** (rd / (rd - 2)))
+                if rd > 2:
+                    new_base = self.base * (scale ** (rd / (rd - 2)))
+                else:
+                    new_base = self.base * scale
                 inv_freq = 1.0 / (new_base ** (torch.arange(0, rd, 2, dtype=torch.float32, device=device) / rd))
             else:
                 inv_freq = self.inv_freq.to(device)
@@ -605,11 +615,19 @@ class Rotary(nn.Module):
             self._seq_len_cached = seq_len
         return self._cos_cached.to(dtype=dtype), self._sin_cached.to(dtype=dtype)
 def apply_rotary_emb(x: Tensor, cos: Tensor, sin: Tensor, rope_dims: int = 0) -> Tensor:
-    if rope_dims > 0 and rope_dims < x.size(-1):
+    d = x.size(-1)
+    if rope_dims > 0 and rope_dims < d:
         x_rope, x_pass = x[..., :rope_dims], x[..., rope_dims:]
-        half = rope_dims // 2
-        x1, x2 = x_rope[..., :half], x_rope[..., half:]
-        x_rope = torch.cat((x1 * cos + x2 * sin, x1 * (-sin) + x2 * cos), dim=-1)
+        rd_rot = rope_dims - (rope_dims % 2)
+        if rd_rot >= 2:
+            x_r = x_rope[..., :rd_rot]
+            half = rd_rot // 2
+            x1, x2 = x_r[..., :half], x_r[..., half:]
+            x_r_rot = torch.cat((x1 * cos + x2 * sin, x1 * (-sin) + x2 * cos), dim=-1)
+            if rope_dims > rd_rot:
+                x_rope = torch.cat((x_r_rot, x_rope[..., rd_rot:]), dim=-1)
+            else:
+                x_rope = x_r_rot
         return torch.cat((x_rope, x_pass), dim=-1)
     half = x.size(-1) // 2
     x1, x2 = x[..., :half], x[..., half:]
