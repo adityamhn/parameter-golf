@@ -187,6 +187,18 @@ The idea is that you are a completely autonomous researcher trying things out. I
 
 As an example use case, a user might leave you running while they sleep. If each experiment takes ~15 minutes then you can run approx 4/hour, for a total of about 30 over an 8-hour sleep. The user then wakes up to `mini_golf/results.tsv` — the complete research output.
 
+## Queued experiment families (after ROPE/LEAKY ridge stalls)
+
+Prioritize cheap local **ROPE_DIMS** / **LEAKY_SLOPE** sweeps around the current best until improvements stop. Then draw from this queue (small, parameter-efficient changes only; edit `train_gpt_single_gpu.py`):
+
+1. **Lightweight recurrence / stateful mixing (xLSTM-style, not a full swap):** shallow recurrent mixing in the last few layers; a small recurrent token mixer or a shared recurrent block applied with minimal extra params; avoid blowing the 16MB artifact budget.
+
+2. **Parameter-efficient mixtures / adapters (Phi-4-Mini / MoLoRA-style):** tiny gated low-rank adapters or expert-style modulation inside MLP and/or attention; keep rank and expert count tiny so total params stay flat-ish.
+
+3. **Activation-triggered / token-conditional adapters (Activated LoRA-style):** small residual adapters or scales gated by activations or simple token-conditional paths; no reliance on KV-cache semantics—must train and eval in this script as-is.
+
+4. **Structured feature routing (interpretability-inspired):** per-layer selective residual routing, light sparse feature gates, or clearer early (lexical) vs late (value/reasoning) pathway separation without generic width increases.
+
 ## Research strategy
 
 Since the baseline already stacks all known leaderboard techniques, you need to find **novel improvements**. Prioritize by expected impact:
