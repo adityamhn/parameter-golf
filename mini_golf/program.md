@@ -189,7 +189,7 @@ As an example use case, a user might leave you running while they sleep. If each
 
 ## Queued experiment families (after ROPE/LEAKY ridge stalls)
 
-Prioritize cheap local **ROPE_DIMS** / **LEAKY_SLOPE** sweeps around the current best until improvements stop. Then draw from this queue (small, parameter-efficient changes only; edit `train_gpt_single_gpu.py`):
+Prioritize cheap local **ROPE_DIMS** / **LEAKY_SLOPE** sweeps around the current best until improvements stop. Use **even** `ROPE_DIMS` only (odd values break the partial-RoPE split vs sin/cos layout). Then draw from this queue (small, parameter-efficient changes only; edit `train_gpt_single_gpu.py`):
 
 1. **Lightweight recurrence / stateful mixing (xLSTM-style, not a full swap):** shallow recurrent mixing in the last few layers; a small recurrent token mixer or a shared recurrent block applied with minimal extra params; avoid blowing the 16MB artifact budget.
 
