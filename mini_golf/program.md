@@ -88,6 +88,10 @@ SEED=1337 PYTHONUNBUFFERED=1 \
 
 The env vars that control the proxy budget (ITERATIONS, TRAIN_BATCH_TOKENS, GRAD_ACCUM_STEPS, WARMDOWN_ITERS, WARMUP_STEPS, VAL_LOSS_EVERY, TRAIN_LOG_EVERY, MAX_WALLCLOCK_SECONDS, TTT_ENABLED, EVAL_STRIDE) are FIXED — do not change them between experiments. Everything else is fair game.
 
+### Tier 1 / Tier 2 gate (mandate, mar30+)
+
+When this policy is active: run **Tier 1** ideas only (e.g. compact SwiGLU via `SWIGLU_MLP`, `NUM_LAYERS` changes). **Tier 2** (broader structural / queue families) runs only if **at least one** Tier 1 proxy run achieves **val_bpb strictly lower** than the current best. If **no** Tier 1 run beats the best, **end the loop** after Tier 1, reset the branch to the last kept good commit, and do not start Tier 2. If Tier 1 improves the best, Tier 2 is **unlocked** for subsequent sessions.
+
 **What you CAN do:**
 - Modify `train_gpt_single_gpu.py` — this is the only file you edit. Architecture, optimizer, activations, attention, embeddings, everything is fair game.
 - Add or change env vars for architectural hyperparameters (NUM_LAYERS, MLP_MULT, etc.) in your run command.
