@@ -1,231 +1,175 @@
 # mini-golf
 
-This is an experiment to have the LLM do its own research on the Parameter Golf challenge.
+Autonomous research for the OpenAI Parameter Golf challenge on a single RTX 3060.
 
 ## The Challenge
 
-**Parameter Golf** is an OpenAI challenge to train the best language model that fits in a **16MB artifact** (code + compressed model) and trains in **under 10 minutes on 8×H100s**. Evaluation metric is **val_bpb** (bits per byte on FineWeb validation set) — lower is better, tokenizer-agnostic.
+**Parameter Golf**: train the best language model that fits in a **16 MB artifact** (code + compressed weights) within **10 minutes on 8×H100s**. Metric is **val_bpb** (bits per byte on FineWeb validation set) — lower is better.
 
-Key constraints that affect architecture decisions:
-- **16,000,000 byte artifact limit**: code bytes + int6-quantized lzma-compressed model weights. More parameters = harder to fit. The current SOTA uses 26.9M params → ~4.6MB compressed. There's headroom, but not unlimited.
-- **10-minute training budget** on 8×H100: ~7,185 steps at 83ms/step. Our proxy runs 700 steps at ~1.3s/step on a single RTX 3060.
-- **10-minute eval budget**: sliding window eval (stride 64) + legal test-time training (TTT). Architecture choices affect eval-time perf too.
-- **Evaluation at any sequence length** is allowed. Longer context during eval can improve BPB.
+Hard constraints:
+- **16,000,000 byte** artifact limit: code + int6-quantized lzma-compressed model weights
+- Any architectural change that helps BPB must keep artifact ≤ 16 MB
+- Eval uses a 10-minute TTT pass on 8×H100s (not run here — proxy metric is raw val_bpb)
 
-## Leaderboard (as of March 30, 2026)
-
-| Score | Summary |
-|------:|---------|
-| **1.1194** | **LeakyReLU² + Legal TTT + Parallel Muon** (current SOTA — our baseline) |
-| 1.1228 | 11L EMA + GPTQ-lite + warmdown3500 |
-| 1.1248 | 11L Partial RoPE + LN Scale + EMA + XSA4 |
-| 1.1271 | 11L XSA4 + EMA + Int6 MLP3x |
-| 1.1307 | 11L Efficient Partial XSA |
-| 1.1428 | 10L Int5-MLP + BigramHash(10240) |
-| 1.1458 | Int6 MLP3x + SmearGate + BigramHash |
-| 1.1502 | 11L MLP3x + Int6 QAT |
-| 1.1556 | SmearGate + OrthoInit + Muon WD |
-| 1.1570 | Ternary Quantization (73.7M params, 1/0/-1) |
-| 1.1928 | LoRA TTT |
-| 1.2244 | Naive Baseline (9L 512D 1024vocab) |
-
-The jump from 1.2244 → 1.1194 came from stacking ~10 independent techniques. Each individual technique contributed 0.001–0.01 BPB. The biggest single wins were: sliding window eval (~0.03), 3× MLP (~0.02), deeper model (~0.01), EMA (~0.01).
-
-### OpenAI's wish list (frontier ideas they want explored)
-
-- [ ] JEPA (Joint Embedding Predictive Architecture)
-- [ ] Text diffusion
-- [ ] Universal transformer (depth recurrence with single block)
-- [ ] Megakernels
-- [ ] State-space models, E2E TTT, super long context
-- [ ] Learning adapters on random linear maps
-- [x] 1-bit quantization (done, 1.1239 BPB non-record)
-- [x] Ternary quantization (done, 1.1570 BPB)
+Current leaderboard top: **1.1194 BPB** (LeakyReLU² + Legal Score-First TTT + Parallel Muon).
+Our proxy baseline after Tier 1 research: **1.3354 BPB** (12L, KV2, ROPE23, LEAKY0.72).
 
 ## Setup
 
-To set up a new experiment, work with the user to:
+You are already on the research branch. Do the following once at the start:
 
-1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar30`). The branch `mini-golf/<tag>` must not already exist — this is a fresh run.
-2. **Create the branch**: `git checkout -b mini-golf/<tag>` from current main.
-3. **Read the in-scope files**: The project is small. Read these files for full context:
-   - `mini_golf/program.md` — this file, the research constitution.
-   - `train_gpt_single_gpu.py` — the file you modify. Model architecture, optimizer, training loop.
-4. **Verify data exists**: Check that `data/datasets/fineweb10B_sp1024/` contains `fineweb_train_*.bin` and `fineweb_val_*.bin`, and `data/tokenizers/fineweb_1024_bpe.model` exists.
-5. **Initialize results.tsv**: Create `mini_golf/results.tsv` with just the header row. The baseline will be recorded after the first run.
-6. **Confirm and go**: Confirm setup looks good.
-
-Once you get confirmation, kick off the experimentation.
+1. **Read in-scope files** (context only — do not modify `prepare` or data):
+   - `README.md` — challenge context, leaderboard, wishlist
+   - `train_gpt_single_gpu.py` — **the only file you edit**
+2. **Verify data**: check that `./data/datasets/fineweb10B_sp1024/` exists and contains `.bin` shards. If missing, tell the human.
+3. **Check results.tsv**: it already has prior results. The current best is **1.3354 BPB**.
+4. **Confirm and start the loop immediately.**
 
 ## Experimentation
 
-Each experiment runs on a single RTX 3060 12GB GPU. The training script runs for a **fixed number of iterations (700)** with a reduced batch size (98,304 tokens/step instead of the full 786,432). This gives ~15 minutes per experiment. You launch it like this:
+Each experiment runs on a single RTX 3060 (12 GB VRAM). Fixed budget per run:
 
 ```bash
+GRAD_ACCUM_STEPS=8 VAL_LOSS_EVERY=500 TRAIN_LOG_EVERY=100 \
+MAX_WALLCLOCK_SECONDS=0 TTT_ENABLED=0 EVAL_STRIDE=0 SEED=1337 \
 PYTHONUNBUFFERED=1 .venv/bin/python3 train_gpt_single_gpu.py > run.log 2>&1
 ```
 
-All hyperparameters are controlled via environment variables. The **SOTA baseline** (1.1194 BPB on 8×H100) uses this exact run command:
-
-```bash
-ITERATIONS=700 WARMUP_STEPS=10 WARMDOWN_ITERS=350 \
-TRAIN_BATCH_TOKENS=98304 GRAD_ACCUM_STEPS=8 \
-VAL_LOSS_EVERY=350 TRAIN_LOG_EVERY=50 \
-MAX_WALLCLOCK_SECONDS=0 TTT_ENABLED=0 EVAL_STRIDE=0 \
-NUM_LAYERS=11 MODEL_DIM=512 NUM_HEADS=8 NUM_KV_HEADS=4 MLP_MULT=3.0 \
-BIGRAM_VOCAB_SIZE=1536 XSA_LAST_N=4 ROPE_DIMS=16 LN_SCALE=1 \
-VE_ENABLED=1 VE_DIM=128 VE_LAYERS=9,10 \
-EMA_ENABLED=1 EMA_DECAY=0.997 SWA_ENABLED=1 SWA_EVERY=50 \
-LATE_QAT=1 LATE_QAT_THRESHOLD=0.15 \
-MUON_WD=0.04 ADAM_WD=0.04 \
-MATRIX_LR=0.025 SCALAR_LR=0.025 TIED_EMBED_LR=0.035 \
-MUON_MOMENTUM=0.99 MUON_MOMENTUM_WARMUP_START=0.92 MUON_MOMENTUM_WARMUP_STEPS=1500 \
-LOGIT_SOFTCAP=30.0 TIE_EMBEDDINGS=1 TIED_EMBED_INIT_STD=0.005 \
-QK_GAIN_INIT=1.5 GRAD_CLIP_NORM=0.3 \
-SEED=1337 PYTHONUNBUFFERED=1 \
-.venv/bin/python3 train_gpt_single_gpu.py > run.log 2>&1
-```
-
-The env vars that control the proxy budget (ITERATIONS, TRAIN_BATCH_TOKENS, GRAD_ACCUM_STEPS, WARMDOWN_ITERS, WARMUP_STEPS, VAL_LOSS_EVERY, TRAIN_LOG_EVERY, MAX_WALLCLOCK_SECONDS, TTT_ENABLED, EVAL_STRIDE) are FIXED — do not change them between experiments. Everything else is fair game.
-
-### Tier 1 / Tier 2 gate (mandate, mar30+)
-
-When this policy is active: run **Tier 1** ideas only (e.g. compact SwiGLU via `SWIGLU_MLP`, `NUM_LAYERS` changes). **Tier 2** (broader structural / queue families) runs only if **at least one** Tier 1 proxy run achieves **val_bpb strictly lower** than the current best. If **no** Tier 1 run beats the best, **end the loop** after Tier 1, reset the branch to the last kept good commit, and do not start Tier 2. If Tier 1 improves the best, Tier 2 is **unlocked** for subsequent sessions.
+(All other hyperparameters — 2000 iters, 98304 tokens/step, 12L, KV2, ROPE23, LEAKY0.72 — are now the defaults in the file. Override via env vars only when testing changes.)
 
 **What you CAN do:**
-- Modify `train_gpt_single_gpu.py` — this is the only file you edit. Architecture, optimizer, activations, attention, embeddings, everything is fair game.
-- Add or change env vars for architectural hyperparameters (NUM_LAYERS, MLP_MULT, etc.) in your run command.
+- Modify `train_gpt_single_gpu.py` freely — architecture, optimizer, hyperparameters, training loop.
+- Change any hyperparameter default in the `Hyperparameters` class.
+- Add new architectural components inside the file (new classes, functions).
 
 **What you CANNOT do:**
-- Change the proxy budget env vars (ITERATIONS, TRAIN_BATCH_TOKENS, GRAD_ACCUM_STEPS, etc.)
-- Install new packages or add dependencies.
-- Modify any other file (data loading, evaluation are baked into train_gpt_single_gpu.py).
+- Modify data loading or the evaluation harness (`val_bpb` computation).
+- Install new packages not already in `.venv/`.
+- Exceed ~10 GB VRAM (hard 12 GB total; keep headroom).
+- Push artifact above 16 MB — check the printed `Total submission size int6+lzma:` line.
 
-**The goal is simple: get the lowest val_bpb.** Since the iteration count and batch size are fixed, you're comparing architectures and techniques fairly. Everything is fair game: change the model architecture, activations, attention mechanism, embeddings, optimizer settings, etc.
+**The goal: get the lowest val_bpb while keeping artifact ≤ 16,000,000 bytes.**
 
-**The first run**: Your very first run should always be the SOTA baseline command above, unmodified. This establishes the comparison point.
-
-## SOTA techniques (what the baseline already includes)
-
-The baseline `train_gpt_single_gpu.py` already implements all current leaderboard techniques:
-
-- **LeakyReLU(0.5)²** activation: `F.leaky_relu(x, 0.5).square()` instead of `relu(x).square()`. Preserves negative gradient flow, eliminates dead neurons.
-- **Parallel Muon** optimizer: Contiguous 3D parameter banks + batched Newton-Schulz orthogonalization. Replaces per-layer DDP with reduce-scatter/all-gather.
-- **11L/512D/8H/4KV** with 3× MLP width and GQA (grouped-query attention).
-- **BigramHash** (1536 vocab): Hash-based bigram features as auxiliary input, gives the model character-level context cheaply.
-- **XSA** (cross-sequence attention) in last 4 layers: Attention across sequence boundaries in deepest layers.
-- **Partial RoPE** (16/64 dims): Only apply rotary position embeddings to 16 of 64 head dimensions.
-- **LN Scale** (1/√(layer+1)): Layer-dependent normalization scaling.
-- **Value Embeddings** (VE128 on layers 9-10): Extra learned value vectors in the deepest attention layers.
-- **EMA(0.997) + SWA(every 50)**: Weight averaging — exponential moving average plus stochastic weight averaging.
-- **Late QAT**: Quantization-aware training with straight-through estimator, activated late in training.
-- **Legal score-first TTT**: Test-time training that adapts on already-scored validation tokens (disabled in proxy for speed).
-
-Your job is to find improvements **on top of** this stack.
+**Simplicity criterion**: A tiny gain from ugly complexity is not worth it. Deleting code and matching or improving BPB is a great win. Weigh complexity cost against improvement magnitude.
 
 ## Output format
 
-The script prints step-by-step logs. The key metric line looks like:
-
-```
-step:700/700 val_loss:X.XXXX val_bpb:X.XXXX train_time:XXXXXms step_avg:XXXX.XXms
-peak memory allocated: XXXX MiB reserved: XXXX MiB
-```
-
-Extract the results:
+After each run, grep the key metrics:
 
 ```bash
-grep "val_bpb\|peak memory" run.log | tail -5
+grep -E "val_bpb|peak memory|Total submission size" run.log | tail -10
 ```
+
+The run prints lines like:
+```
+step  500 | val_bpb 1.3701
+step 1000 | val_bpb 1.3520
+step 1500 | val_bpb 1.3420
+step 2000 | val_bpb 1.3354
+peak memory allocated: 3431 MiB
+Total submission size int6+lzma: 16132749 bytes
+```
+
+A crash (OOM, Python exception) will produce no `val_bpb` line. Run `tail -n 50 run.log` to see the traceback.
 
 ## Logging results
 
-When an experiment is done, log it to `mini_golf/results.tsv` (tab-separated).
+Record every run in `results.tsv` (tab-separated, NOT comma-separated).
 
-The TSV has a header row and 5 columns:
-
+Columns:
 ```
-commit	val_bpb	memory_gb	status	description
+commit	val_bpb	memory_gb	artifact_mb	status	description
 ```
 
-1. git commit hash (short, 7 chars)
-2. val_bpb achieved (e.g. 2.345678) — use 0.000000 for crashes
-3. peak memory in GB, round to .1f (divide MiB by 1024) — use 0.0 for crashes
-4. status: `keep`, `discard`, or `crash`
-5. short text description of what this experiment tried
+1. short git commit hash (7 chars)
+2. final val_bpb (use 0.000000 for crashes)
+3. peak memory in GB (divide MiB by 1024, round to .1f)
+4. artifact size in MB (divide bytes by 1,000,000, round to .2f — use 0.00 for crashes)
+5. status: `keep`, `discard`, or `crash`
+6. short description of the change
 
 Example:
+```
+commit	val_bpb	memory_gb	artifact_mb	status	description
+40a50ed	1.3354	3.4	16.13	keep	best stack — 12L KV2 ROPE23 LEAKY0.72 — current best
+```
 
-```
-commit	val_bpb	memory_gb	status	description
-a1b2c3d	2.345678	3.3	keep	SOTA baseline
-b2c3d4e	2.312345	3.4	keep	SwiGLU activation instead of LeakyReLU²
-c3d4e5f	2.400000	3.3	discard	13 layers (slower convergence at 700 steps)
-d4e5f6g	0.000000	0.0	crash	double MLP width (OOM)
-```
+**Do NOT git-commit results.tsv.** Leave it untracked.
+
+## Ideas to explore
+
+Use these as a starting menu. Exhaust obvious wins first, then go weirder.
+
+### Optimizer & training dynamics
+- Muon momentum schedule tuning (start 0.85→0.99 vs current 0.92→0.99)
+- Lower scalar / tied-embed LR to reduce overfitting at end of warmdown
+- Gradient clipping threshold (try 0.2, 0.4)
+- Weight decay sweep (MUON_WD, ADAM_WD: 0.01, 0.02, 0.06)
+- Cosine vs trapezoidal warmdown shape
+
+### Architecture: attention
+- Reduce to 1 KV head (MQA) — saves params → smaller artifact
+- Sliding window attention on early layers, full on late layers
+- RoPE dims sweep (20, 24, 26, 32)
+- Increase rope_base (50000, 100000 — better long-range)
+- ALiBi or no positional encoding on some layers
+
+### Architecture: MLP / activations
+- LeakyReLU² slope sweep (0.5, 0.6, 0.8, 1.0)
+- SwiGLU (gated activation, standard in LLaMA) — replaces LeakyReLU²
+- GeGLU
+- MLP multiplier sweep (2.5, 3.5, 4.0)
+
+### Architecture: macro
+- Depth vs width: try 13L at narrower dim, or 10L at wider
+- Parallel attention + MLP (PaLM-style: compute attn and MLP on same residual, sum)
+- Cross-layer KV sharing (share KV between adjacent layers)
+- Parameter sharing / weight tying across alternating layers
+- Mixture of Depths: skip MLP on some tokens (top-k routing on residual norm)
+- Universal transformer: cycle through a single shared layer N times
+
+### Regularization & normalization
+- RMSNorm scale init sweep (LN_SCALE: 0.8, 1.2)
+- QK normalization (normalize Q and K before dot product — stabilizes training)
+- Logit soft-cap sweep (20.0, 40.0, off)
+- Dropout on attention weights (tiny: 0.05)
+
+### Embedding & vocab
+- Bigram vocab size sweep (1024, 2048) — trades artifact bytes vs expressivity
+- Bigram dim sweep (64, 256)
+- Untie embeddings if it helps (adds params → watch artifact size)
+
+### OpenAI wishlist (from README)
+- **JEPA**: predict latent representations of future tokens instead of raw tokens
+- **Text diffusion**: replace autoregressive head with diffusion objective on the last N tokens
+- **H-net tokenization**: byte-level model with hierarchical token merging
+- **Universal transformer / depth recurrence**: single shared layer looped N times
+- **State-space model layers**: replace some attention heads with Mamba/S4/RWKV-style recurrence
+- **Megakernels**: fused CUDA kernel for attn+MLP in one pass (if nvcc available)
+- **Learning adapters on random linear maps**: random projection adapters in each layer
+
+### Quantization-aware
+- INT4 weights with higher capacity (more layers/width, same artifact)
+- Mixed precision: INT4 for MLP, INT8 for attention
 
 ## The experiment loop
 
-The experiment runs on a dedicated branch (e.g. `mini-golf/mar30`).
-
 LOOP FOREVER:
 
-1. Look at the git state: the current branch/commit we're on.
-2. Review `mini_golf/results.tsv` to understand what's been tried.
-3. Hack `train_gpt_single_gpu.py` with an experimental idea.
-4. `git commit -am "category: description of the change"`
-5. Run the experiment: `ITERATIONS=700 WARMUP_STEPS=10 WARMDOWN_ITERS=350 TRAIN_BATCH_TOKENS=98304 GRAD_ACCUM_STEPS=8 VAL_LOSS_EVERY=350 TRAIN_LOG_EVERY=50 MAX_WALLCLOCK_SECONDS=0 TTT_ENABLED=0 EVAL_STRIDE=0 NUM_LAYERS=11 MODEL_DIM=512 NUM_HEADS=8 NUM_KV_HEADS=4 MLP_MULT=3.0 BIGRAM_VOCAB_SIZE=1536 XSA_LAST_N=4 ROPE_DIMS=16 LN_SCALE=1 VE_ENABLED=1 VE_DIM=128 VE_LAYERS=9,10 EMA_ENABLED=1 EMA_DECAY=0.997 SWA_ENABLED=1 SWA_EVERY=50 LATE_QAT=1 LATE_QAT_THRESHOLD=0.15 MUON_WD=0.04 ADAM_WD=0.04 MATRIX_LR=0.025 SCALAR_LR=0.025 TIED_EMBED_LR=0.035 MUON_MOMENTUM=0.99 MUON_MOMENTUM_WARMUP_START=0.92 MUON_MOMENTUM_WARMUP_STEPS=1500 LOGIT_SOFTCAP=30.0 TIE_EMBEDDINGS=1 TIED_EMBED_INIT_STD=0.005 QK_GAIN_INIT=1.5 GRAD_CLIP_NORM=0.3 SEED=1337 PYTHONUNBUFFERED=1 .venv/bin/python3 train_gpt_single_gpu.py > run.log 2>&1` (you may override architectural env vars like NUM_LAYERS, MLP_MULT, etc. — but never the proxy budget vars)
-6. Read out the results: `grep "val_bpb\|peak memory" run.log | tail -5`
-7. If the grep output is empty, the run crashed. Run `tail -n 50 run.log` to read the Python stack trace and attempt a fix. If you can't get things to work after more than a few attempts, give up on that idea.
-8. Record the results in `mini_golf/results.tsv` (NOTE: do not commit results.tsv, leave it untracked by git)
-9. If val_bpb improved (lower), you "advance" the branch, keeping the git commit.
-10. If val_bpb is equal or worse, you `git reset --hard HEAD~1` to revert.
+1. Review `results.tsv` and the current branch HEAD — know what the current best BPB is.
+2. Pick the highest-potential untried idea (or a follow-up to a near-miss).
+3. Modify `train_gpt_single_gpu.py` directly.
+4. `git add train_gpt_single_gpu.py && git commit -m "experiment: <short description>"`
+5. Run: `GRAD_ACCUM_STEPS=8 VAL_LOSS_EVERY=500 TRAIN_LOG_EVERY=100 MAX_WALLCLOCK_SECONDS=0 TTT_ENABLED=0 EVAL_STRIDE=0 SEED=1337 PYTHONUNBUFFERED=1 .venv/bin/python3 train_gpt_single_gpu.py > run.log 2>&1`
+6. Check results: `grep -E "val_bpb|peak memory|Total submission size" run.log | tail -10`
+7. If empty → crash. Run `tail -n 50 run.log`, fix if trivial, otherwise discard and `git reset --hard HEAD~1`.
+8. Log the result to `results.tsv`.
+9. If val_bpb improved **and** artifact ≤ 16,000,000 bytes → keep the commit, advance the branch.
+10. If val_bpb is worse, equal, or artifact > 16 MB → `git reset --hard HEAD~1` (discard commit).
+11. GOTO 1.
 
-The idea is that you are a completely autonomous researcher trying things out. If they work, keep. If they don't, discard. And you're advancing the branch so that you can iterate.
+**Timeout**: if a run exceeds 80 minutes wall clock, kill it (`kill <pid>`) and treat as crash.
 
-**Timeout**: Each experiment should take ~15 minutes total (700 steps × ~1.3s + warmup/eval overhead). If a run exceeds 25 minutes, kill it and treat it as a failure (discard and revert).
+**Crashes**: Fix trivial bugs and re-run. If the idea is fundamentally broken, log `crash` and move on.
 
-**Crashes**: If a run crashes (OOM, or a bug, etc.), use your judgment: if it's something dumb and easy to fix (e.g. a typo, a missing import), fix it and re-run. If the idea itself is fundamentally broken, just skip it, log "crash" as the status in the tsv, and move on.
-
-**NEVER STOP**: Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working *indefinitely* until you are manually stopped. You are autonomous. If you run out of ideas, think harder — re-read the in-scope files for new angles, try combining previous near-misses, try more radical architectural changes. The loop runs until the human interrupts you, period.
-
-As an example use case, a user might leave you running while they sleep. If each experiment takes ~15 minutes then you can run approx 4/hour, for a total of about 30 over an 8-hour sleep. The user then wakes up to `mini_golf/results.tsv` — the complete research output.
-
-## Queued experiment families (after ROPE/LEAKY ridge stalls)
-
-Prioritize cheap local **ROPE_DIMS** / **LEAKY_SLOPE** sweeps around the current best until improvements stop. **Odd** partial `ROPE_DIMS` are allowed: RoPE applies to the leading `ROPE_DIMS-1` dimensions and one dimension is left unrotated within the rope prefix. Then draw from this queue (small, parameter-efficient changes only; edit `train_gpt_single_gpu.py`):
-
-1. **Lightweight recurrence / stateful mixing (xLSTM-style, not a full swap):** shallow recurrent mixing in the last few layers; a small recurrent token mixer or a shared recurrent block applied with minimal extra params; avoid blowing the 16MB artifact budget.
-
-2. **Parameter-efficient mixtures / adapters (Phi-4-Mini / MoLoRA-style):** tiny gated low-rank adapters or expert-style modulation inside MLP and/or attention; keep rank and expert count tiny so total params stay flat-ish.
-
-3. **Activation-triggered / token-conditional adapters (Activated LoRA-style):** small residual adapters or scales gated by activations or simple token-conditional paths; no reliance on KV-cache semantics—must train and eval in this script as-is.
-
-4. **Structured feature routing (interpretability-inspired):** per-layer selective residual routing, light sparse feature gates, or clearer early (lexical) vs late (value/reasoning) pathway separation without generic width increases.
-
-## Research strategy
-
-Since the baseline already stacks all known leaderboard techniques, you need to find **novel improvements**. Prioritize by expected impact:
-
-**High priority (proven ingredients at scale, but may have room to tune or combine differently):**
-- Activation variants: different LeakyReLU slopes (0.3, 0.7), SwiGLU, GELU×tanh, gated activations
-- Depth: 12-13 layers (may need to check the 16MB compressed size — `grep "int6+lzma" run.log`)
-- MLP: 4× width, gated MLP (SwiGLU-style), shared MLP across layers
-- Attention: more XSA layers, different RoPE dim splits, different head/KV-head ratios
-
-**Medium priority (less explored but plausible):**
-- Different norm strategies (post-norm, sandwich norm)
-- Different weight averaging (LAWA, different EMA decays, SWA frequency)
-- Embedding tricks: larger BigramHash vocab, VE on more layers, different VE dims
-- Better initialization schemes
-
-**Frontier (from OpenAI's wish list — even a sign-of-life is valuable):**
-- Depth recurrence / universal transformer (run same block N times)
-- State-space layers (replace some attention layers with SSM)
-- Mixture-of-experts (replace some MLPs with sparse experts)
-- Any creative architectural idea you can think of
-
-**Watch out for:**
-- OOM on 12GB VRAM — the baseline uses ~3.3 GB, you have headroom but not infinite
-- Compressed model size — check `Serialized model int6+lzma` in the log stays under 16MB
-- Changes that help early in training but hurt at convergence (common trap at 700 steps)
+**NEVER STOP**: Do NOT pause to ask the human whether to continue. Do NOT say "should I keep going?". You are autonomous. Keep running experiments until the human interrupts you. If you run out of ideas, re-read the ideas list above, combine near-misses, or try more radical changes. The loop runs until manually stopped, period.
