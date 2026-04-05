@@ -88,7 +88,7 @@ class Hyperparameters:
     qat_enabled = bool(int(os.environ.get("QAT_ENABLED", "0")))
     bigram_vocab_size = int(os.environ.get("BIGRAM_VOCAB_SIZE", 1536))
     bigram_dim = int(os.environ.get("BIGRAM_DIM", 128))
-    xsa_last_n = int(os.environ.get("XSA_LAST_N", 4))
+    xsa_last_n = int(os.environ.get("XSA_LAST_N", str(num_layers)))
     rope_dims = int(os.environ.get("ROPE_DIMS", 23))
     _head_dim = model_dim // num_heads
     if 0 < rope_dims < _head_dim and rope_dims < 2:
